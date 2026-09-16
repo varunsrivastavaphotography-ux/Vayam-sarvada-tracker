@@ -1,0 +1,77 @@
+name: Build Vayam Sarvada Tracker APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract ZIP
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ZIP file not found"
+            exit 1
+          fi
+
+          mkdir project
+          unzip -q "$ZIP_FILE" -d project
+
+      - name: Find project folder
+        run: |
+          PROJECT_DIR=$(find project -name package.json -not -path "*/node_modules/*" -print -quit | xargs dirname)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "package.json not found"
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Project found at: $PROJECT_DIR"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          cd "$PROJECT_DIR"
+          npm install
+
+      - name: Build web app
+        run: |
+          cd "$PROJECT_DIR"
+          npm run build
+
+      - name: Sync Capacitor Android
+        run: |
+          cd "$PROJECT_DIR"
+          npx cap sync android
+
+      - name: Build Debug APK
+        run: |
+          ANDROID_DIR=$(find "$PROJECT_DIR" -type f -name "gradlew" -print -quit | xargs -r dirname)
+
+          if [ -z "$ANDROID_DIR" ]; then
+            echo "Android Gradle project not found"
+            exit 1
+          fi
+
+          cd "$ANDROID_DIR"
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vayam-Sarvada-Tracker-APK
+          path: "**/build/outputs/apk/debug/*.apk"
